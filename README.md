@@ -1,6 +1,6 @@
 # Open-Meteo Custom Component for Home Assistant
 
-This is a custom component for Home Assistant that serves as a drop-in replacement for the built-in Open-Meteo integration.
+This is a custom component for Home Assistant that serves as a drop-in replacement for the built-in Open-Meteo integration. This repo is heavily based on the HA core component open_meteo https://github.com/home-assistant/core/tree/dev/homeassistant/components/open_meteo
 
 ## Purpose
 
