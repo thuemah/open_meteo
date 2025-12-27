@@ -76,32 +76,39 @@ class OpenMeteoWeatherEntity(
     @property
     def condition(self) -> str | None:
         """Return the current condition."""
-        if not self.coordinator.data.current_weather:
+        if not hasattr(self.coordinator.data, "current") or not self.coordinator.data.current:
             return None
         return WMO_TO_HA_CONDITION_MAP.get(
-            self.coordinator.data.current_weather.weather_code
+            self.coordinator.data.current.weathercode
         )
 
     @property
     def native_temperature(self) -> float | None:
         """Return the platform temperature."""
-        if not self.coordinator.data.current_weather:
+        if not hasattr(self.coordinator.data, "current") or not self.coordinator.data.current:
             return None
-        return self.coordinator.data.current_weather.temperature
+        return self.coordinator.data.current.temperature_2m
 
     @property
     def native_wind_speed(self) -> float | None:
         """Return the wind speed."""
-        if not self.coordinator.data.current_weather:
+        if not hasattr(self.coordinator.data, "current") or not self.coordinator.data.current:
             return None
-        return self.coordinator.data.current_weather.wind_speed
+        return self.coordinator.data.current.windspeed_10m
 
     @property
     def wind_bearing(self) -> float | str | None:
         """Return the wind bearing."""
-        if not self.coordinator.data.current_weather:
+        if not hasattr(self.coordinator.data, "current") or not self.coordinator.data.current:
             return None
-        return self.coordinator.data.current_weather.wind_direction
+        return self.coordinator.data.current.winddirection_10m
+
+    @property
+    def native_wind_gust_speed(self) -> float | None:
+        """Return the current wind gust speed."""
+        if not hasattr(self.coordinator.data, "current") or not self.coordinator.data.current:
+            return None
+        return self.coordinator.data.current.windgusts_10m
 
     @callback
     def _async_forecast_daily(self) -> list[Forecast] | None:
