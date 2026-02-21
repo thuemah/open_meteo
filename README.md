@@ -6,6 +6,24 @@ This is a custom component for Home Assistant that serves as a drop-in replaceme
 
 The primary goal of this custom component is to provide a more comprehensive hourly forecast by including weather parameters that are missing from the standard Home Assistant integration.
 
+The official Open-Meteo integration is great, but it strips out a lot of valuable data from the hourly forecast to fit the standard Home Assistant weather model.
+
+If you are doing advanced energy management (like EMHASS), predictive heating analytics, or complex Node-RED automations, you need rich data. This custom component drops right in and supercharges your hourly forecast with:
+
+💨 Wind Gusts: Essential for heat-loss calculations.
+
+☁️ Cloud Coverage: Crucial for solar gain prediction and PV forecasting.
+
+💧 Humidity & Pressure: For advanced environmental modeling.
+
+📅 Extended Hourly Range: Up to 7 days of hourly data
+
+
+## Installation
+HACS (Recommended) Open HACS in Home Assistant Click the three dots in the top right corner Select "Custom repositories" Add https://github.com/thuemah/open_meteo as an integration Install the integration Restart Home Assistant
+
+Manual Installation Copy the custom_components/mitsubishi folder to your custom_components directory Restart Home Assistant Go to Configuration → Integrations Click "Add Integration" and search for "Open Meteo" Configuration
+
 ## Features
 
 This integration extends the `forecast_hourly` functionality by adding the following parameters:
