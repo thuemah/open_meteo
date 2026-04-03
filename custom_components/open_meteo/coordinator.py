@@ -105,6 +105,8 @@ class OpenMeteoDataUpdateCoordinator(DataUpdateCoordinator[Forecast]):
             HourlyParameters.WEATHER_CODE,
             HourlyParameters.CLOUD_COVER,
             HourlyParameters.WIND_GUSTS_10M,
+            HourlyParameters.RELATIVE_HUMIDITY_2M,
+            HourlyParameters.PRESSURE_MSL,
         ]
 
         try:

@@ -1,7 +1,7 @@
 {
   "domain": "open_meteo",
   "name": "Open-Meteo",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "codeowners": ["@frenck"],
   "config_flow": true,
   "dependencies": ["zone"],

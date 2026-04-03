@@ -21,7 +21,12 @@ from homeassistant.components.weather import (
     SingleCoordinatorWeatherEntity,
     WeatherEntityFeature,
 )
-from homeassistant.const import UnitOfPrecipitationDepth, UnitOfSpeed, UnitOfTemperature
+from homeassistant.const import (
+    UnitOfPrecipitationDepth,
+    UnitOfPressure,
+    UnitOfSpeed,
+    UnitOfTemperature,
+)
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
@@ -50,6 +55,7 @@ class OpenMeteoWeatherEntity(
     _attr_has_entity_name = True
     _attr_name = None
     _attr_native_precipitation_unit = UnitOfPrecipitationDepth.MILLIMETERS
+    _attr_native_pressure_unit = UnitOfPressure.HPA
     _attr_native_temperature_unit = UnitOfTemperature.CELSIUS
     _attr_native_wind_speed_unit = UnitOfSpeed.KILOMETERS_PER_HOUR
     _attr_supported_features = (
@@ -109,6 +115,27 @@ class OpenMeteoWeatherEntity(
         if not hasattr(self.coordinator.data, "current") or not self.coordinator.data.current:
             return None
         return self.coordinator.data.current.windgusts_10m
+
+    @property
+    def humidity(self) -> float | None:
+        """Return the humidity."""
+        if not hasattr(self.coordinator.data, "current") or not self.coordinator.data.current:
+            return None
+        return self.coordinator.data.current.relative_humidity_2m
+
+    @property
+    def cloud_coverage(self) -> int | None:
+        """Return the cloud coverage."""
+        if not hasattr(self.coordinator.data, "current") or not self.coordinator.data.current:
+            return None
+        return self.coordinator.data.current.cloud_cover
+
+    @property
+    def native_pressure(self) -> float | None:
+        """Return the pressure."""
+        if not hasattr(self.coordinator.data, "current") or not self.coordinator.data.current:
+            return None
+        return self.coordinator.data.current.pressure_msl
 
     @callback
     def _async_forecast_daily(self) -> list[Forecast] | None:
