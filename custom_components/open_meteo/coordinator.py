@@ -69,8 +69,23 @@ class OpenMeteoWithCurrent(OpenMeteo):
         forecast = Forecast.from_dict(data_dict)
 
         if "current" in data_dict:
-            # Attach the current data as a SimpleNamespace to allow dot access
-            forecast.current = SimpleNamespace(**data_dict["current"])
+            # Normalize API keys to match the Python attribute names used by
+            # the open-meteo library (e.g. "relativehumidity_2m" -> "relative_humidity_2m",
+            # "windspeed_10m" -> "wind_speed_10m", "winddirection_10m" -> "wind_direction_10m",
+            # "windgusts_10m" -> "wind_gusts_10m", "weathercode" -> "weather_code").
+            raw = data_dict["current"]
+            normalized = {}
+            for key, value in raw.items():
+                k = key
+                k = k.replace("relativehumidity_", "relative_humidity_")
+                k = k.replace("windspeed_", "wind_speed_")
+                k = k.replace("winddirection_", "wind_direction_")
+                k = k.replace("windgusts_", "wind_gusts_")
+                k = k.replace("cloudcover", "cloud_cover")
+                if k == "weathercode":
+                    k = "weather_code"
+                normalized[k] = value
+            forecast.current = SimpleNamespace(**normalized)
 
         return forecast
 

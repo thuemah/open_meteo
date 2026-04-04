@@ -85,7 +85,7 @@ class OpenMeteoWeatherEntity(
         if not hasattr(self.coordinator.data, "current") or not self.coordinator.data.current:
             return None
         return WMO_TO_HA_CONDITION_MAP.get(
-            self.coordinator.data.current.weathercode
+            self.coordinator.data.current.weather_code
         )
 
     @property
@@ -100,21 +100,21 @@ class OpenMeteoWeatherEntity(
         """Return the wind speed."""
         if not hasattr(self.coordinator.data, "current") or not self.coordinator.data.current:
             return None
-        return self.coordinator.data.current.windspeed_10m
+        return self.coordinator.data.current.wind_speed_10m
 
     @property
     def wind_bearing(self) -> float | str | None:
         """Return the wind bearing."""
         if not hasattr(self.coordinator.data, "current") or not self.coordinator.data.current:
             return None
-        return self.coordinator.data.current.winddirection_10m
+        return self.coordinator.data.current.wind_direction_10m
 
     @property
     def native_wind_gust_speed(self) -> float | None:
         """Return the current wind gust speed."""
         if not hasattr(self.coordinator.data, "current") or not self.coordinator.data.current:
             return None
-        return self.coordinator.data.current.windgusts_10m
+        return self.coordinator.data.current.wind_gusts_10m
 
     @property
     def humidity(self) -> float | None:
