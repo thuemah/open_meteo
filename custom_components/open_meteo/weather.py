@@ -137,6 +137,36 @@ class OpenMeteoWeatherEntity(
             return None
         return self.coordinator.data.current.pressure_msl
 
+    @property
+    def extra_state_attributes(self) -> dict[str, object] | None:
+        """Expose live solar irradiance plus the API's own freshness metadata.
+
+        `solar_data_time` is the API's `time` for the current observation
+        and `solar_data_interval` is the aggregation window in seconds (900
+        for 15-min preceding mean, 3600 for hourly preceding mean) so
+        consumers can tell live data apart from interpolated/stale data.
+        """
+        current = getattr(self.coordinator.data, "current", None)
+        if current is None:
+            return None
+
+        attrs: dict[str, object] = {}
+        for field in ("shortwave_radiation", "direct_normal_irradiance", "diffuse_radiation"):
+            value = getattr(current, field, None)
+            if value is not None:
+                attrs[field] = value
+
+        if not attrs:
+            return None
+
+        time_value = getattr(current, "time", None)
+        if time_value is not None:
+            attrs["solar_data_time"] = time_value
+        interval_value = getattr(current, "interval", None)
+        if interval_value is not None:
+            attrs["solar_data_interval"] = interval_value
+        return attrs
+
     @callback
     def _async_forecast_daily(self) -> list[Forecast] | None:
         """Return the daily forecast in native units."""
@@ -238,6 +268,22 @@ class OpenMeteoWeatherEntity(
 
             if hourly.wind_gusts_10m is not None:
                 forecast[ATTR_FORECAST_WIND_GUST_SPEED] = hourly.wind_gusts_10m[index]
+
+            # Solar irradiance — live on hourly when the lib accepted setattr,
+            # otherwise on the side-channel namespace populated by the
+            # coordinator. Keys mirror the open-meteo API field names.
+            solar_source = hourly
+            if not hasattr(solar_source, "direct_normal_irradiance"):
+                solar_source = getattr(self.coordinator.data, "hourly_solar", None)
+            if solar_source is not None:
+                for field in (
+                    "shortwave_radiation",
+                    "direct_normal_irradiance",
+                    "diffuse_radiation",
+                ):
+                    values = getattr(solar_source, field, None)
+                    if values is not None and index < len(values):
+                        forecast[field] = values[index]
 
             forecasts.append(forecast)
 

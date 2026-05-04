@@ -27,6 +27,16 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 
 from .const import DOMAIN, LOGGER, SCAN_INTERVAL
 
+# Solar radiation fields requested as raw strings — the bundled open-meteo
+# library version does not expose these as enum members, and HA does not
+# allow bumping the dependency. The same names work for the `current=` and
+# `hourly=` query parameters.
+SOLAR_FIELDS = (
+    "shortwave_radiation",
+    "direct_normal_irradiance",
+    "diffuse_radiation",
+)
+
 type OpenMeteoConfigEntry = ConfigEntry[OpenMeteoDataUpdateCoordinator]
 
 
@@ -42,7 +52,7 @@ class OpenMeteoWithCurrent(OpenMeteo):
         current_weather: bool = False,
         current: list[str] | None = None,
         daily: list[DailyParameters] | None = None,
-        hourly: list[HourlyParameters] | None = None,
+        hourly: list[HourlyParameters | str] | None = None,
         past_days: int = 0,
         precipitation_unit: PrecipitationUnit = PrecipitationUnit.MILLIMETERS,
         temperature_unit: TemperatureUnit = TemperatureUnit.CELSIUS,
@@ -66,7 +76,28 @@ class OpenMeteoWithCurrent(OpenMeteo):
         )
         data = await self._request(url=url)
         data_dict = json.loads(data)
+
+        # Pop solar fields the bundled open-meteo library does not understand
+        # so Forecast.from_dict() does not choke on them; reattach afterwards.
+        hourly_solar: dict[str, list] = {}
+        if isinstance(data_dict.get("hourly"), dict):
+            for key in SOLAR_FIELDS:
+                if key in data_dict["hourly"]:
+                    hourly_solar[key] = data_dict["hourly"].pop(key)
+
         forecast = Forecast.from_dict(data_dict)
+
+        if hourly_solar and forecast.hourly is not None:
+            for key, values in hourly_solar.items():
+                try:
+                    setattr(forecast.hourly, key, values)
+                except (AttributeError, TypeError):
+                    # Fallback if forecast.hourly is frozen — stash on forecast.
+                    hourly_solar_ns = getattr(forecast, "hourly_solar", None)
+                    if hourly_solar_ns is None:
+                        hourly_solar_ns = SimpleNamespace()
+                        forecast.hourly_solar = hourly_solar_ns
+                    setattr(hourly_solar_ns, key, values)
 
         if "current" in data_dict:
             # Normalize API keys to match the Python attribute names used by
@@ -113,7 +144,10 @@ class OpenMeteoDataUpdateCoordinator(DataUpdateCoordinator[Forecast]):
         if (zone := self.hass.states.get(self.config_entry.data[CONF_ZONE])) is None:
             raise UpdateFailed(f"Zone '{self.config_entry.data[CONF_ZONE]}' not found")
 
-        current = [
+        # Solar irradiance is included in `current` (the API returns its own
+        # `time` and `interval` so consumers can tell whether the value is a
+        # 15-min or 1-hour preceding mean) and in `hourly` for forecast use.
+        current: list[HourlyParameters | str] = [
             HourlyParameters.TEMPERATURE_2M,
             HourlyParameters.WIND_SPEED_10M,
             HourlyParameters.WIND_DIRECTION_10M,
@@ -122,6 +156,20 @@ class OpenMeteoDataUpdateCoordinator(DataUpdateCoordinator[Forecast]):
             HourlyParameters.WIND_GUSTS_10M,
             HourlyParameters.RELATIVE_HUMIDITY_2M,
             HourlyParameters.PRESSURE_MSL,
+            *SOLAR_FIELDS,
+        ]
+
+        hourly_fields: list[HourlyParameters | str] = [
+            HourlyParameters.PRECIPITATION,
+            HourlyParameters.TEMPERATURE_2M,
+            HourlyParameters.WEATHER_CODE,
+            HourlyParameters.WIND_DIRECTION_10M,
+            HourlyParameters.WIND_SPEED_10M,
+            HourlyParameters.RELATIVE_HUMIDITY_2M,
+            HourlyParameters.CLOUD_COVER,
+            HourlyParameters.PRESSURE_MSL,
+            HourlyParameters.WIND_GUSTS_10M,
+            *SOLAR_FIELDS,
         ]
 
         try:
@@ -137,17 +185,7 @@ class OpenMeteoDataUpdateCoordinator(DataUpdateCoordinator[Forecast]):
                     DailyParameters.WIND_DIRECTION_10M_DOMINANT,
                     DailyParameters.WIND_SPEED_10M_MAX,
                 ],
-                hourly=[
-                    HourlyParameters.PRECIPITATION,
-                    HourlyParameters.TEMPERATURE_2M,
-                    HourlyParameters.WEATHER_CODE,
-                    HourlyParameters.WIND_DIRECTION_10M,
-                    HourlyParameters.WIND_SPEED_10M,
-                    HourlyParameters.RELATIVE_HUMIDITY_2M,
-                    HourlyParameters.CLOUD_COVER,
-                    HourlyParameters.PRESSURE_MSL,
-                    HourlyParameters.WIND_GUSTS_10M,
-                ],
+                hourly=hourly_fields,
                 precipitation_unit=PrecipitationUnit.MILLIMETERS,
                 temperature_unit=TemperatureUnit.CELSIUS,
                 timezone="auto",
