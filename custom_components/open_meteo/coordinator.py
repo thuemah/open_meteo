@@ -85,6 +85,13 @@ class OpenMeteoWithCurrent(OpenMeteo):
                 if key in data_dict["hourly"]:
                     hourly_solar[key] = data_dict["hourly"].pop(key)
 
+            # mashumaro deserialises wind_gusts_10m as Optional[list[float]].
+            # The API may return a list of None values when data is unavailable;
+            # that fails validation, so drop the field and let it default to None.
+            wg = data_dict["hourly"].get("windgusts_10m")
+            if isinstance(wg, list) and any(v is None for v in wg):
+                data_dict["hourly"].pop("windgusts_10m")
+
         forecast = Forecast.from_dict(data_dict)
 
         if hourly_solar and forecast.hourly is not None:
