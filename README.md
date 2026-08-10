@@ -16,13 +16,28 @@ If you are doing advanced energy management (like EMHASS), predictive heating an
 
 💧 Humidity & Pressure: For advanced environmental modeling.
 
+☀️ Solar Irradiance: Shortwave (GHI), direct normal (DNI) and diffuse (DHI) radiation — both in the hourly forecast and as live entity attributes. This is what the standard weather model has no place for at all, and it is what makes proper solar gain and PV modelling possible.
+
 📅 Extended Hourly Range: Up to 7 days of hourly data
 
 
 ## Installation
-HACS (Recommended) Open HACS in Home Assistant Click the three dots in the top right corner Select "Custom repositories" Add https://github.com/thuemah/open_meteo as an integration Install the integration Restart Home Assistant
 
-Manual Installation Copy the custom_components/mitsubishi folder to your custom_components directory Restart Home Assistant Go to Configuration → Integrations Click "Add Integration" and search for "Open Meteo" Configuration
+### HACS (recommended)
+
+1. Open HACS in Home Assistant
+2. Click the three dots in the top right corner
+3. Select **Custom repositories**
+4. Add `https://github.com/thuemah/open_meteo` as an **Integration**
+5. Install the integration
+6. Restart Home Assistant
+
+### Manual
+
+1. Copy the `custom_components/open_meteo` folder into your `custom_components` directory
+2. Restart Home Assistant
+3. Go to **Settings → Devices & Services**
+4. Click **Add Integration** and search for **Open-Meteo**
 
 ## Features
 
@@ -32,9 +47,23 @@ This integration extends the `forecast_hourly` functionality by adding the follo
 *   **Cloud Coverage** (`cloud_cover`)
 *   **Atmospheric Pressure** (`pressure_msl`)
 *   **Wind Gusts** (`wind_gusts_10m`)
+*   **Shortwave Radiation / GHI** (`shortwave_radiation`)
+*   **Direct Normal Irradiance / DNI** (`direct_normal_irradiance`)
+*   **Diffuse Radiation / DHI** (`diffuse_radiation`)
+
+The hourly forecast reaches roughly 6–7 days ahead at full 1-hour resolution, so it stays usable well past the point where most providers drop to daily or coarser steps.
+
+### Live solar attributes
+
+The three irradiance values are also exposed as attributes on the weather entity for the current observation, alongside two fields that let you tell fresh data from stale:
+
+*   `solar_data_time` — the API's own timestamp for the current observation
+*   `solar_data_interval` — the aggregation window in seconds (`900` for a 15-minute preceding mean, `3600` for hourly)
+
+Check `solar_data_time` before trusting the values for real-time decisions; the attributes are omitted entirely when the API returns no current block.
 
 ## Versioning
 
-The version of this component is explicitly set to **1.0.0**.
+The version of this component is deliberately kept in the **1.x** range — see `custom_components/open_meteo/manifest.json` for the current value.
 
-This is done to ensure that Home Assistant prioritizes this custom component over the built-in integration, which typically has a version number corresponding to the Open-Meteo library version it uses (e.g., 0.3.x). By setting the version to 1.0.0, we force Home Assistant to load this extended version.
+This is done to ensure Home Assistant prioritizes this custom component over the built-in integration, whose version tracks the Open-Meteo library it uses (currently 0.3.x). Any 1.x version outranks that, so the extended version is the one that loads.
