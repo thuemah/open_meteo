@@ -22,6 +22,19 @@ DOMAIN: Final = "open_meteo"
 LOGGER = logging.getLogger(__package__)
 SCAN_INTERVAL = timedelta(minutes=30)
 
+# A surface is a plane, not a building. Tilt and azimuth describe where it
+# faces; terrain, overhangs and neighbouring roofs are the consumer's business
+# and belong in a template over the beam sensor, not in here.
+SUBENTRY_TYPE_SURFACE: Final = "surface"
+
+CONF_TILT: Final = "tilt"
+CONF_AZIMUTH: Final = "azimuth"
+CONF_ALBEDO: Final = "albedo"
+
+# How far ahead the beam forecast attribute reaches. Long enough to act on,
+# short enough to keep the attribute inside the recorder's comfort zone.
+FORECAST_HORIZON = timedelta(hours=12)
+
 # World Meteorological Organization Weather Code
 # mapped to Home Assistant weather conditions.
 # https://www.weather.gov/tg/wmo

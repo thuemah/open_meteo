@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from datetime import datetime, time, timedelta, timezone
 
-from open_meteo import Forecast as OpenMeteoForecast
-
 from homeassistant.components.weather import (
     ATTR_FORECAST_CLOUD_COVERAGE,
     ATTR_FORECAST_CONDITION,
@@ -30,11 +28,10 @@ from homeassistant.const import (
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN, WMO_TO_HA_CONDITION_MAP
-from .coordinator import OpenMeteoConfigEntry
+from .coordinator import OpenMeteoConfigEntry, OpenMeteoDataUpdateCoordinator
 
 
 async def async_setup_entry(
@@ -47,8 +44,15 @@ async def async_setup_entry(
     async_add_entities([OpenMeteoWeatherEntity(entry=entry, coordinator=coordinator)])
 
 
+FORECAST_SOLAR_FIELDS = (
+    "shortwave_radiation",
+    "direct_normal_irradiance",
+    "diffuse_radiation",
+)
+
+
 class OpenMeteoWeatherEntity(
-    SingleCoordinatorWeatherEntity[DataUpdateCoordinator[OpenMeteoForecast]]
+    SingleCoordinatorWeatherEntity[OpenMeteoDataUpdateCoordinator]
 ):
     """Defines an Open-Meteo weather entity."""
 
@@ -66,7 +70,7 @@ class OpenMeteoWeatherEntity(
         self,
         *,
         entry: OpenMeteoConfigEntry,
-        coordinator: DataUpdateCoordinator[OpenMeteoForecast],
+        coordinator: OpenMeteoDataUpdateCoordinator,
     ) -> None:
         """Initialize Open-Meteo weather entity."""
         super().__init__(coordinator=coordinator)
@@ -151,7 +155,7 @@ class OpenMeteoWeatherEntity(
             return None
 
         attrs: dict[str, object] = {}
-        for field in ("shortwave_radiation", "direct_normal_irradiance", "diffuse_radiation"):
+        for field in FORECAST_SOLAR_FIELDS:
             value = getattr(current, field, None)
             if value is not None:
                 attrs[field] = value
@@ -222,6 +226,7 @@ class OpenMeteoWeatherEntity(
             return None
 
         forecasts: list[Forecast] = []
+        solar = self.coordinator.raw_extras.block("hourly")
 
         # Can have data in the past: https://github.com/open-meteo/open-meteo/issues/699
         today = dt_util.utcnow()
@@ -269,21 +274,13 @@ class OpenMeteoWeatherEntity(
             if hourly.wind_gusts_10m is not None:
                 forecast[ATTR_FORECAST_WIND_GUST_SPEED] = hourly.wind_gusts_10m[index]
 
-            # Solar irradiance — live on hourly when the lib accepted setattr,
-            # otherwise on the side-channel namespace populated by the
-            # coordinator. Keys mirror the open-meteo API field names.
-            solar_source = hourly
-            if not hasattr(solar_source, "direct_normal_irradiance"):
-                solar_source = getattr(self.coordinator.data, "hourly_solar", None)
-            if solar_source is not None:
-                for field in (
-                    "shortwave_radiation",
-                    "direct_normal_irradiance",
-                    "diffuse_radiation",
-                ):
-                    values = getattr(solar_source, field, None)
-                    if values is not None and index < len(values):
-                        forecast[field] = values[index]
+            # Solar irradiance comes through the raw-extras block, whose time
+            # axis is the very array being enumerated here, so indices align.
+            # Keys mirror the open-meteo API field names.
+            if solar is not None:
+                for field in FORECAST_SOLAR_FIELDS:
+                    if (value := solar.value(field, index)) is not None:
+                        forecast[field] = value
 
             forecasts.append(forecast)
 

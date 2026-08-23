@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import logging
 from types import SimpleNamespace
 
 from open_meteo import (
@@ -26,22 +25,45 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import DOMAIN, LOGGER, SCAN_INTERVAL
+from .series import RawExtras, SolarData, build_solar_data, extract_block
+from .solar import SOLAR_CONSTANT
 
-# Solar radiation fields requested as raw strings — the bundled open-meteo
-# library version does not expose these as enum members, and HA does not
-# allow bumping the dependency. The same names work for the `current=` and
-# `hourly=` query parameters.
-SOLAR_FIELDS = (
+# Solar fields requested as raw strings. The bundled open-meteo library version
+# does not model any of them, and HA does not allow bumping the dependency, so
+# they travel through the raw-extras mechanism below rather than through
+# Forecast.from_dict().
+#
+# The `_instant` suffix is not decoration: an instantaneous irradiance
+# multiplied by an instantaneous cosine is exact, whereas an interval mean
+# multiplied by a mid-interval cosine is not, and the error peaks at grazing
+# incidence — which is precisely the west-facing evening case this is for.
+HOURLY_SOLAR_FIELDS: tuple[str, ...] = (
     "shortwave_radiation",
     "direct_normal_irradiance",
     "diffuse_radiation",
+    "shortwave_radiation_instant",
+    "direct_radiation_instant",
+    "terrestrial_radiation_instant",
+)
+
+# `diffuse_radiation_instant` does not exist at 15-minute resolution, so
+# diffuse is reconstructed as GHI - direct. `terrestrial_radiation_instant`
+# does exist, and is what lets cos(zenith) come from the API rather than from
+# our own astronomy in the range where ours is least trustworthy.
+MINUTELY_15_SOLAR_FIELDS: tuple[str, ...] = (
+    "shortwave_radiation_instant",
+    "direct_radiation_instant",
+    "terrestrial_radiation_instant",
 )
 
 type OpenMeteoConfigEntry = ConfigEntry[OpenMeteoDataUpdateCoordinator]
 
 
 class OpenMeteoWithCurrent(OpenMeteo):
-    """Subclass of OpenMeteo to support current parameter."""
+    """Subclass of OpenMeteo to support current and minutely_15 parameters."""
+
+    raw_extras: RawExtras
+    """Blocks from the most recent call that the library cannot deserialise."""
 
     async def forecast(
         self,
@@ -53,18 +75,20 @@ class OpenMeteoWithCurrent(OpenMeteo):
         current: list[str] | None = None,
         daily: list[DailyParameters] | None = None,
         hourly: list[HourlyParameters | str] | None = None,
+        minutely_15: list[str] | None = None,
         past_days: int = 0,
         precipitation_unit: PrecipitationUnit = PrecipitationUnit.MILLIMETERS,
         temperature_unit: TemperatureUnit = TemperatureUnit.CELSIUS,
         timeformat: TimeFormat = TimeFormat.ISO_8601,
         wind_speed_unit: WindSpeedUnit = WindSpeedUnit.KILOMETERS_PER_HOUR,
     ) -> Forecast:
-        """Get weather forecast with support for current parameter."""
+        """Get weather forecast, keeping fields the library cannot model."""
         url = URL("https://api.open-meteo.com/v1/forecast").with_query(
             current_weather="true" if current_weather else "false",
             current=",".join(current) if current is not None else [],
             daily=",".join(daily) if daily is not None else [],
             hourly=",".join(hourly) if hourly is not None else [],
+            minutely_15=",".join(minutely_15) if minutely_15 is not None else [],
             latitude=latitude,
             longitude=longitude,
             past_days=past_days,
@@ -74,55 +98,55 @@ class OpenMeteoWithCurrent(OpenMeteo):
             timezone=timezone,
             windspeed_unit=wind_speed_unit,
         )
-        data = await self._request(url=url)
-        data_dict = json.loads(data)
+        data_dict = json.loads(await self._request(url=url))
+        utc_offset_seconds = int(data_dict.get("utc_offset_seconds", 0))
 
-        # Pop solar fields the bundled open-meteo library does not understand
-        # so Forecast.from_dict() does not choke on them; reattach afterwards.
-        hourly_solar: dict[str, list] = {}
+        extras = RawExtras()
+        for name, fields, interval in (
+            ("hourly", HOURLY_SOLAR_FIELDS, 3600),
+            ("minutely_15", None, 900),
+        ):
+            if (
+                block := extract_block(
+                    data_dict, name, fields, utc_offset_seconds, interval
+                )
+            ) is not None:
+                extras.blocks[name] = block
+
         if isinstance(data_dict.get("hourly"), dict):
-            for key in SOLAR_FIELDS:
-                if key in data_dict["hourly"]:
-                    hourly_solar[key] = data_dict["hourly"].pop(key)
-
             # mashumaro deserialises wind_gusts_10m as Optional[list[float]].
             # The API may return a list of None values when data is unavailable;
             # that fails validation, so drop the field and let it default to None.
-            wg = data_dict["hourly"].get("windgusts_10m")
-            if isinstance(wg, list) and any(v is None for v in wg):
+            gusts = data_dict["hourly"].get("windgusts_10m")
+            if isinstance(gusts, list) and any(value is None for value in gusts):
                 data_dict["hourly"].pop("windgusts_10m")
 
+        # Held on the client rather than bolted onto Forecast: the library's
+        # dataclass is not ours to grow attributes on, and one coordinator owns
+        # one client whose updates are serialised, so this is unambiguous.
+        self.raw_extras = extras
         forecast = Forecast.from_dict(data_dict)
-
-        if hourly_solar and forecast.hourly is not None:
-            for key, values in hourly_solar.items():
-                try:
-                    setattr(forecast.hourly, key, values)
-                except (AttributeError, TypeError):
-                    # Fallback if forecast.hourly is frozen — stash on forecast.
-                    hourly_solar_ns = getattr(forecast, "hourly_solar", None)
-                    if hourly_solar_ns is None:
-                        hourly_solar_ns = SimpleNamespace()
-                        forecast.hourly_solar = hourly_solar_ns
-                    setattr(hourly_solar_ns, key, values)
 
         if "current" in data_dict:
             # Normalize API keys to match the Python attribute names used by
             # the open-meteo library (e.g. "relativehumidity_2m" -> "relative_humidity_2m",
             # "windspeed_10m" -> "wind_speed_10m", "winddirection_10m" -> "wind_direction_10m",
             # "windgusts_10m" -> "wind_gusts_10m", "weathercode" -> "weather_code").
-            raw = data_dict["current"]
             normalized = {}
-            for key, value in raw.items():
-                k = key
-                k = k.replace("relativehumidity_", "relative_humidity_")
-                k = k.replace("windspeed_", "wind_speed_")
-                k = k.replace("winddirection_", "wind_direction_")
-                k = k.replace("windgusts_", "wind_gusts_")
-                k = k.replace("cloudcover", "cloud_cover")
-                if k == "weathercode":
-                    k = "weather_code"
-                normalized[k] = value
+            for key, value in data_dict["current"].items():
+                normalized_key = key
+                normalized_key = normalized_key.replace(
+                    "relativehumidity_", "relative_humidity_"
+                )
+                normalized_key = normalized_key.replace("windspeed_", "wind_speed_")
+                normalized_key = normalized_key.replace(
+                    "winddirection_", "wind_direction_"
+                )
+                normalized_key = normalized_key.replace("windgusts_", "wind_gusts_")
+                normalized_key = normalized_key.replace("cloudcover", "cloud_cover")
+                if normalized_key == "weathercode":
+                    normalized_key = "weather_code"
+                normalized[normalized_key] = value
             forecast.current = SimpleNamespace(**normalized)
 
         return forecast
@@ -145,11 +169,21 @@ class OpenMeteoDataUpdateCoordinator(DataUpdateCoordinator[Forecast]):
         session = async_get_clientsession(hass)
         # Use our patched client
         self.open_meteo = OpenMeteoWithCurrent(session=session)
+        self.open_meteo.raw_extras = RawExtras()
+        self.solar = SolarData()
+
+    @property
+    def raw_extras(self) -> RawExtras:
+        """Return blocks from the last response the library could not model."""
+        return self.open_meteo.raw_extras
 
     async def _async_update_data(self) -> Forecast:
         """Fetch data from Open-Meteo."""
         if (zone := self.hass.states.get(self.config_entry.data[CONF_ZONE])) is None:
             raise UpdateFailed(f"Zone '{self.config_entry.data[CONF_ZONE]}' not found")
+
+        latitude = zone.attributes[ATTR_LATITUDE]
+        longitude = zone.attributes[ATTR_LONGITUDE]
 
         # Solar irradiance is included in `current` (the API returns its own
         # `time` and `interval` so consumers can tell whether the value is a
@@ -163,7 +197,9 @@ class OpenMeteoDataUpdateCoordinator(DataUpdateCoordinator[Forecast]):
             HourlyParameters.WIND_GUSTS_10M,
             HourlyParameters.RELATIVE_HUMIDITY_2M,
             HourlyParameters.PRESSURE_MSL,
-            *SOLAR_FIELDS,
+            "shortwave_radiation",
+            "direct_normal_irradiance",
+            "diffuse_radiation",
         ]
 
         hourly_fields: list[HourlyParameters | str] = [
@@ -176,13 +212,13 @@ class OpenMeteoDataUpdateCoordinator(DataUpdateCoordinator[Forecast]):
             HourlyParameters.CLOUD_COVER,
             HourlyParameters.PRESSURE_MSL,
             HourlyParameters.WIND_GUSTS_10M,
-            *SOLAR_FIELDS,
+            *HOURLY_SOLAR_FIELDS,
         ]
 
         try:
-            return await self.open_meteo.forecast(
-                latitude=zone.attributes[ATTR_LATITUDE],
-                longitude=zone.attributes[ATTR_LONGITUDE],
+            forecast = await self.open_meteo.forecast(
+                latitude=latitude,
+                longitude=longitude,
                 current=current,
                 daily=[
                     DailyParameters.PRECIPITATION_SUM,
@@ -193,11 +229,21 @@ class OpenMeteoDataUpdateCoordinator(DataUpdateCoordinator[Forecast]):
                     DailyParameters.WIND_SPEED_10M_MAX,
                 ],
                 hourly=hourly_fields,
+                minutely_15=list(MINUTELY_15_SOLAR_FIELDS),
                 precipitation_unit=PrecipitationUnit.MILLIMETERS,
                 temperature_unit=TemperatureUnit.CELSIUS,
                 timezone="auto",
                 wind_speed_unit=WindSpeedUnit.KILOMETERS_PER_HOUR,
-                #forecast_days=14,
             )
         except OpenMeteoError as err:
             raise UpdateFailed("Open-Meteo API communication error") from err
+
+        self.solar = build_solar_data(self.open_meteo.raw_extras, latitude, longitude)
+        if self.solar.e0 is not None:
+            LOGGER.debug(
+                "Fitted extraterrestrial irradiance %.1f W/m2 (nominal %.0f) over %d samples",
+                self.solar.e0,
+                SOLAR_CONSTANT,
+                len(self.solar.samples),
+            )
+        return forecast

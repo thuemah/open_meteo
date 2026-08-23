@@ -1,0 +1,57 @@
+{#-
+  Plane-of-array transposition for template sensors.
+
+  Copy this file to <config>/custom_templates/open_meteo_solar.jinja and reload
+  templates. Then, in a template sensor:
+
+    {% from 'open_meteo_solar.jinja' import poa %}
+    {% set p = poa(
+         tilt = 90,
+         surface_azimuth = 250,
+         ghi = states('sensor.home_global_horizontal_irradiance') | float(0),
+         direct_horizontal = states('sensor.home_direct_horizontal_irradiance') | float(0),
+         sun_azimuth = states('sensor.home_solar_azimuth') | float(0),
+         sun_elevation = states('sensor.home_solar_elevation') | float(-90),
+       ) | from_json %}
+    {{ p.beam }}
+
+  This exists for planes you have not configured as surfaces. A configured
+  surface is more accurate below about five degrees of elevation, because the
+  integration takes cos(zenith) from the API's terrestrial radiation while this
+  macro can only reconstruct it from the published elevation. Above that the
+  two agree closely; below it the beam term carries a factor of cot(elevation)
+  that magnifies any difference. Anything you actually gate on at sunset
+  deserves to be a surface.
+
+  Azimuth is compass degrees: 0 north, 90 east, 180 south, 270 west.
+  Tilt is from horizontal: 0 is a flat roof, 90 a wall.
+
+  Components are returned separately on purpose. Terrain and overhangs block
+  the beam while leaving most of the sky term intact, so a mask belongs on
+  `beam` alone:
+
+    {% set blocked = p.beam if sun_azimuth > 285 else 0 %}
+-#}
+
+{%- macro poa(tilt, surface_azimuth, ghi, direct_horizontal, sun_azimuth, sun_elevation, albedo=0.2) -%}
+  {%- set rad = pi / 180 -%}
+  {%- set cos_zenith = sin(sun_elevation * rad) -%}
+  {%- set sin_zenith = cos(sun_elevation * rad) -%}
+  {%- set diffuse = [ghi - direct_horizontal, 0] | max -%}
+  {%- set cos_aoi = cos_zenith * cos(tilt * rad)
+                  + sin_zenith * sin(tilt * rad)
+                  * cos((sun_azimuth - surface_azimuth) * rad) -%}
+  {#- Below half a degree the division by cos(zenith) multiplies quantisation
+      noise by more than a hundred, so the beam is numerically meaningless. -#}
+  {%- set live = cos_aoi > 0 and sun_elevation >= 0.5 and direct_horizontal > 0 -%}
+  {%- set beam = (direct_horizontal * cos_aoi / cos_zenith) if live else 0 -%}
+  {%- set sky = diffuse * (1 + cos(tilt * rad)) / 2 -%}
+  {%- set ground = ghi * albedo * (1 - cos(tilt * rad)) / 2 -%}
+  {{- {
+        "beam": beam | round(2),
+        "sky": sky | round(2),
+        "ground": ground | round(2),
+        "total": (beam + sky + ground) | round(2),
+        "aoi": (acos([cos_aoi, 1] | min) / rad) | round(2) if cos_aoi > 0 else none,
+      } | to_json -}}
+{%- endmacro -%}

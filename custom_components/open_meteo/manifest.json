@@ -1,12 +1,18 @@
 {
   "domain": "open_meteo",
   "name": "Open-Meteo",
-  "version": "1.0.4",
-  "codeowners": ["@frenck"],
+  "version": "1.1.0",
+  "codeowners": [
+    "@frenck"
+  ],
   "config_flow": true,
-  "dependencies": ["zone"],
+  "dependencies": [
+    "zone"
+  ],
   "documentation": "https://www.home-assistant.io/integrations/open_meteo",
   "integration_type": "service",
   "iot_class": "cloud_polling",
-  "requirements": ["open-meteo==0.3.2"]
+  "requirements": [
+    "open-meteo==0.3.2"
+  ]
 }

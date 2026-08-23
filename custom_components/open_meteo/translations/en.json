@@ -1,0 +1,91 @@
+{
+  "config": {
+    "abort": {
+      "already_configured": "Service is already configured"
+    },
+    "step": {
+      "user": {
+        "data": {
+          "zone": "Zone"
+        },
+        "description": "Select location to use for weather forecasting"
+      }
+    }
+  },
+  "config_subentries": {
+    "surface": {
+      "title": "Surface",
+      "entry_type": "Surface",
+      "initiate_flow": {
+        "user": "Add surface",
+        "reconfigure": "Reconfigure surface"
+      },
+      "step": {
+        "user": {
+          "title": "Add surface",
+          "description": "A surface is a plane, described by how it is tilted and which way it faces. Tilt is measured from horizontal: 0° is a flat roof, 90° a wall. Azimuth is compass degrees: 0° north, 90° east, 180° south, 270° west, matching the sun entity.\n\nTerrain, overhangs and neighbouring buildings are not modelled here — mask the direct beam sensor for those.",
+          "data": {
+            "name": "Name",
+            "tilt": "Tilt",
+            "azimuth": "Azimuth",
+            "albedo": "Ground reflectance"
+          },
+          "data_description": {
+            "tilt": "0° for a horizontal surface, 90° for a vertical one.",
+            "azimuth": "The direction the surface faces, in compass degrees.",
+            "albedo": "Fraction of light reflected by the ground in front of the surface. 0.2 suits most ground; raise it for snow."
+          }
+        },
+        "reconfigure": {
+          "title": "Reconfigure surface",
+          "description": "A surface is a plane, described by how it is tilted and which way it faces. Tilt is measured from horizontal: 0° is a flat roof, 90° a wall. Azimuth is compass degrees: 0° north, 90° east, 180° south, 270° west, matching the sun entity.\n\nTerrain, overhangs and neighbouring buildings are not modelled here — mask the direct beam sensor for those.",
+          "data": {
+            "name": "Name",
+            "tilt": "Tilt",
+            "azimuth": "Azimuth",
+            "albedo": "Ground reflectance"
+          },
+          "data_description": {
+            "tilt": "0° for a horizontal surface, 90° for a vertical one.",
+            "azimuth": "The direction the surface faces, in compass degrees.",
+            "albedo": "Fraction of light reflected by the ground in front of the surface. 0.2 suits most ground; raise it for snow."
+          }
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "poa_beam": {
+        "name": "Direct beam"
+      },
+      "poa_sky": {
+        "name": "Sky diffuse"
+      },
+      "poa_ground": {
+        "name": "Ground reflected"
+      },
+      "poa_total": {
+        "name": "Total irradiance"
+      },
+      "angle_of_incidence": {
+        "name": "Angle of incidence"
+      },
+      "global_horizontal_irradiance": {
+        "name": "Global horizontal irradiance"
+      },
+      "direct_horizontal_irradiance": {
+        "name": "Direct horizontal irradiance"
+      },
+      "diffuse_horizontal_irradiance": {
+        "name": "Diffuse horizontal irradiance"
+      },
+      "solar_azimuth": {
+        "name": "Solar azimuth"
+      },
+      "solar_elevation": {
+        "name": "Solar elevation"
+      }
+    }
+  }
+}
